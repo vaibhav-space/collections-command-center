@@ -1,0 +1,502 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -----------------------------------------------------------------------------
+// Multi-Tenancy & Authorization Context
+// -----------------------------------------------------------------------------
+
+model Tenant {
+  id             String          @id @default(cuid())
+  name           String
+  code           String          @unique
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  operators      Operator[]
+  borrowers      Borrower[]
+  accounts       Account[]
+  policyVersions PolicyVersion[]
+  auditEvents    AuditEvent[]
+
+  @@map("tenants")
+}
+
+model Operator {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  email          String          @unique
+  name           String
+  role           OperatorRole    @default(COLLECTOR)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  assignedCases  Case[]
+  auditEvents    AuditEvent[]
+
+  @@map("operators")
+}
+
+enum OperatorRole {
+  COLLECTOR
+  SUPERVISOR
+  ADMIN
+}
+
+// -----------------------------------------------------------------------------
+// Borrower & Account Core
+// -----------------------------------------------------------------------------
+
+model Borrower {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  borrowerCode   String          @unique // e.g. "BOR-1001"
+  firstName      String
+  lastName       String
+  primaryPhone   String
+  primaryEmail   String
+  timezone       String          @default("America/New_York") // IANA format
+  isOptedOut     Boolean         @default(false)
+  optedOutAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  accounts       Account[]
+  contactMethods ContactMethod[]
+  preferences    ContactPreference[]
+
+  @@index([tenantId, borrowerCode])
+  @@map("borrowers")
+}
+
+model ContactMethod {
+  id             String          @id @default(cuid())
+  borrowerId     String
+  borrower       Borrower        @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  channel        ChannelType
+  addressValue   String          // phone number or email address
+  isVerified     Boolean         @default(true)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+
+  @@unique([borrowerId, channel, addressValue])
+  @@map("contact_methods")
+}
+
+model ContactPreference {
+  id             String          @id @default(cuid())
+  borrowerId     String
+  borrower       Borrower        @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  preferredChannel ChannelType   @default(EMAIL)
+  allowSms       Boolean         @default(true)
+  allowEmail     Boolean         @default(true)
+  allowCalls     Boolean         @default(true)
+  preferredTimeWindow String?    // e.g. "10:00-14:00"
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([borrowerId])
+  @@map("contact_preferences")
+}
+
+enum ChannelType {
+  SMS
+  EMAIL
+  PHONE_CALL
+  CHATBOT
+}
+
+model Account {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  borrowerId     String
+  borrower       Borrower        @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  accountNumber  String          @unique // e.g. "ACC-8001"
+  status         AccountStatus   @default(DELINQUENT)
+  currency       String          @default("USD")
+
+  // Exact Monetary Ledger Balances
+  currentBalance Decimal         @db.Decimal(12, 2)
+  principalOwed  Decimal         @db.Decimal(12, 2)
+  interestOwed   Decimal         @db.Decimal(12, 2)
+  feesOwed       Decimal         @db.Decimal(12, 2)
+  amountOverdue  Decimal         @db.Decimal(12, 2)
+  daysPastDue    Int             @default(0)
+
+  // Operational Metadata
+  delinquentSince DateTime?
+  lastPaymentDate DateTime?
+  lastContactDate DateTime?
+  hasActiveDispute Boolean       @default(false)
+  hasActiveHardship Boolean      @default(false)
+  hasLegalRepresentation Boolean @default(false)
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  ledgerEntries  AccountLedgerEntry[]
+  conversations  Conversation[]
+  paymentLinks   PaymentLink[]
+  payments       Payment[]
+  promisesToPay  PromiseToPay[]
+  cases          Case[]
+  auditEvents    AuditEvent[]
+
+  @@index([tenantId, status, daysPastDue])
+  @@index([borrowerId])
+  @@map("accounts")
+}
+
+enum AccountStatus {
+  CURRENT
+  DELINQUENT
+  IN_DISPUTE
+  HARDSHIP_PAUSED
+  LEGAL_HOLD
+  PAID_IN_FULL
+  CHARGED_OFF
+}
+
+// -----------------------------------------------------------------------------
+// Financial Ledger & Payment Reconciliation
+// -----------------------------------------------------------------------------
+
+model AccountLedgerEntry {
+  id             String          @id @default(cuid())
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  entryType      LedgerEntryType
+  amount         Decimal         @db.Decimal(12, 2) // Positive = Debt Increase, Negative = Payment/Credit
+  balanceAfter   Decimal         @db.Decimal(12, 2)
+  currency       String          @default("USD")
+  description    String
+  referenceId    String?         // Payment ID, fee reference, etc.
+  createdAt      DateTime        @default(now())
+
+  @@index([accountId, createdAt])
+  @@map("account_ledger_entries")
+}
+
+enum LedgerEntryType {
+  PRINCIPAL_CHARGE
+  INTEREST_ACCRUAL
+  LATE_FEE
+  PAYMENT_CREDIT
+  ADJUSTMENT_CREDIT
+  FEE_REVERSAL
+}
+
+model PaymentLink {
+  id             String          @id @default(cuid())
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  url            String          @unique
+  amount         Decimal         @db.Decimal(12, 2)
+  currency       String          @default("USD")
+  status         PaymentLinkStatus @default(ACTIVE)
+  expiresAt      DateTime
+  idempotencyKey String          @unique
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  payments       Payment[]
+
+  @@index([accountId, status])
+  @@map("payment_links")
+}
+
+enum PaymentLinkStatus {
+  ACTIVE
+  CLICKED
+  COMPLETED
+  EXPIRED
+  REVOKED
+}
+
+model Payment {
+  id             String          @id @default(cuid())
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  paymentLinkId  String?
+  paymentLink    PaymentLink?    @relation(fields: [paymentLinkId], references: [id])
+  amount         Decimal         @db.Decimal(12, 2)
+  currency       String          @default("USD")
+  status         PaymentStatus   @default(PENDING)
+  providerRef    String          @unique // Simulated processor reference
+  paymentMethod  String          @default("ACH") // "ACH", "DEBIT_CARD", "WIRE"
+  settledAt      DateTime?
+  failedReason   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  promiseToPayId String?
+  promiseToPay   PromiseToPay?   @relation(fields: [promiseToPayId], references: [id])
+
+  @@index([accountId, status])
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  SETTLED
+  FAILED
+  REFUNDED
+}
+
+// -----------------------------------------------------------------------------
+// Promise-To-Pay (PTP) State Machine
+// -----------------------------------------------------------------------------
+
+model PromiseToPay {
+  id             String          @id @default(cuid())
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  amount         Decimal         @db.Decimal(12, 2)
+  currency       String          @default("USD")
+  dueDate        DateTime
+  status         PtpStatus       @default(PROPOSED)
+  proposedBy     String          // "BORROWER", "AI_COPILOT", "OPERATOR"
+  approvedBy     String?         // Operator ID
+  confirmedAt    DateTime?
+  brokenAt       DateTime?
+  idempotencyKey String?         @unique
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  payments       Payment[]
+
+  @@index([accountId, status, dueDate])
+  @@map("promises_to_pay")
+}
+
+enum PtpStatus {
+  PROPOSED
+  PENDING_CONFIRMATION
+  APPROVED
+  DUE
+  KEPT
+  BROKEN
+  CANCELLED
+}
+
+// -----------------------------------------------------------------------------
+// Conversations & Timeline
+// -----------------------------------------------------------------------------
+
+model Conversation {
+  id             String          @id @default(cuid())
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  channel        ChannelType
+  status         ConversationStatus @default(ACTIVE)
+  summary        String?         @db.Text
+  lastMessageAt  DateTime        @default(now())
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  messages       Message[]
+
+  @@index([accountId, status])
+  @@map("conversations")
+}
+
+enum ConversationStatus {
+  ACTIVE
+  PAUSED
+  CLOSED
+  ESCALATED
+}
+
+model Message {
+  id             String          @id @default(cuid())
+  conversationId String
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderType     SenderType
+  channel        ChannelType
+  body           String          @db.Text
+  sentAt         DateTime        @default(now())
+  isRead         Boolean         @default(false)
+  deliveryStatus DeliveryStatus  @default(DELIVERED)
+
+  // AI & Policy Metadata
+  detectedIntent String?
+  extractedEntities Json?
+  policyDecisionId String?
+
+  toolExecutions ToolExecutionLog[]
+
+  @@index([conversationId, sentAt])
+  @@map("messages")
+}
+
+enum SenderType {
+  BORROWER
+  OPERATOR
+  AI_AGENT
+  SYSTEM
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  HELD
+  FAILED
+}
+
+// -----------------------------------------------------------------------------
+// Case Management & Escalations
+// -----------------------------------------------------------------------------
+
+model Case {
+  id             String          @id @default(cuid())
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  assignedToId   String?
+  assignedTo     Operator?       @relation(fields: [assignedToId], references: [id])
+  category       CaseCategory
+  priority       CasePriority    @default(MEDIUM)
+  status         CaseStatus      @default(OPEN)
+  title          String
+  description    String          @db.Text
+  resolutionNotes String?        @db.Text
+  resolvedAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([accountId, status, priority])
+  @@map("cases")
+}
+
+enum CaseCategory {
+  DISPUTE
+  HARDSHIP
+  IDENTITY_THEFT
+  WRONG_PARTY
+  LEGAL_REPRESENTATION
+  BANKRUPTCY
+  AI_UNCERTAINTY
+  PAYMENT_RECONCILIATION_FAILURE
+}
+
+enum CasePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum CaseStatus {
+  OPEN
+  UNDER_REVIEW
+  ACTION_PENDING
+  RESOLVED
+  CLOSED
+}
+
+// -----------------------------------------------------------------------------
+// Policy Engine & Tool Governance
+// -----------------------------------------------------------------------------
+
+model PolicyVersion {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  versionString  String          // e.g. "v2026.11-us-standard"
+  rulesConfig    Json            // Serialized policy rule thresholds
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+
+  decisions      PolicyDecisionLog[]
+
+  @@unique([tenantId, versionString])
+  @@map("policy_versions")
+}
+
+model PolicyDecisionLog {
+  id             String          @id @default(cuid())
+  policyVersionId String
+  policyVersion  PolicyVersion   @relation(fields: [policyVersionId], references: [id])
+  accountId      String
+  actionAttempted String
+  status         PolicyStatus    // ALLOWED, BLOCKED, REQUIRES_APPROVAL
+  reason         String          @db.Text
+  evidence       Json            // Array of supporting account strings
+  evaluatedAt    DateTime        @default(now())
+
+  toolExecutionLogs ToolExecutionLog[]
+
+  @@index([accountId, evaluatedAt])
+  @@map("policy_decision_logs")
+}
+
+enum PolicyStatus {
+  ALLOWED
+  BLOCKED
+  REQUIRES_APPROVAL
+}
+
+model ToolExecutionLog {
+  id             String          @id @default(cuid())
+  messageId      String?
+  message        Message?        @relation(fields: [messageId], references: [id])
+  policyDecisionId String?
+  policyDecision PolicyDecisionLog? @relation(fields: [policyDecisionId], references: [id])
+  toolName       String
+  inputPayload   Json
+  outputPayload  Json
+  status         ExecutionStatus
+  executedBy     String          // Operator ID or "SYSTEM"
+  idempotencyKey String?         @unique
+  executedAt     DateTime        @default(now())
+
+  @@index([toolName, status])
+  @@map("tool_execution_logs")
+}
+
+enum ExecutionStatus {
+  SUCCESS
+  FAILED
+  REJECTED_BY_POLICY
+}
+
+// -----------------------------------------------------------------------------
+// Immutable System Audit Log
+// -----------------------------------------------------------------------------
+
+model AuditEvent {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  accountId      String?
+  account        Account?        @relation(fields: [accountId], references: [id])
+  operatorId     String?
+  operator       Operator?       @relation(fields: [operatorId], references: [id])
+  actorType      ActorType
+  action         String          // e.g. "PAYMENT_RECONCILED", "PTP_APPROVED"
+  entityType     String          // "Account", "PromiseToPay", "Payment"
+  entityId       String
+  previousState  Json?
+  newState       Json?
+  ipAddress      String?
+  createdAt      DateTime        @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([accountId, createdAt])
+  @@map("audit_events")
+}
+
+enum ActorType {
+  OPERATOR
+  SYSTEM
+  BORROWER
+  AI_COPILOT
+}
