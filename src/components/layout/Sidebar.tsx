@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   History,
   Building2,
+  Sparkles,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { href: '/cases', label: 'Cases & Review', icon: AlertCircle },
   { href: '/policies', label: 'Policy Centre', icon: ShieldCheck },
   { href: '/audit', label: 'Audit Trail', icon: History },
+  { href: '/guide', label: 'System Guide', icon: Sparkles, badge: 'Tour' },
 ];
 
 export function Sidebar() {
@@ -59,14 +61,21 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
+              className={`flex items-center justify-between px-3 py-2 text-xs font-medium rounded-md transition-colors ${
                 isActive
                   ? 'bg-indigo-50 text-indigo-700 font-semibold'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
-              <Icon className={`h-4 w-4 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
-              {item.label}
+              <div className="flex items-center gap-3">
+                <Icon className={`h-4 w-4 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                <span>{item.label}</span>
+              </div>
+              {'badge' in item && item.badge && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 uppercase tracking-wider">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           );
         })}
