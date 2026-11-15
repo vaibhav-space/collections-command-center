@@ -50,19 +50,87 @@ The LLM Proposes ──► The Policy Engine Authorises ──► The Business T
 
 ---
 
-## 4. Documentation
+## 4. Quick Start & Local Setup
 
-Comprehensive architecture, specifications, and planning documents are maintained in `docs/`:
+### Prerequisites
+- **Node.js**: v18.18+ or v20+
+- **PostgreSQL**: Local or hosted instance (e.g. Supabase, Railway, Neon)
 
-- [PRODUCT_REQUIREMENTS.md](docs/PRODUCT_REQUIREMENTS.md) — Comprehensive product requirements, user personas, workflows, and acceptance criteria.
-- [TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md) — Detailed architecture, database schema, policy engine contract, tool registry, and API specifications.
-- [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) — Phased implementation plan, test-driven milestones, and verification runbooks.
-- [RESEARCH_AND_DECISIONS.md](docs/RESEARCH_AND_DECISIONS.md) — Empirical research findings (C&R/Ipsos Dec 2025 survey, competitor reviews, regulatory references) and architecture trade-offs.
-- [RISK_AND_OPEN_QUESTIONS.md](docs/RISK_AND_OPEN_QUESTIONS.md) — Failure modes, security boundaries, rate limit mitigations, and architectural decisions.
+### 1. Clone & Install
+```bash
+git clone git@github.com:vaibhav-space/collections-command-center.git
+cd collections-command-center
+npm install
+```
+
+### 2. Configure Environment Variables
+Copy `.env.example` to `.env`:
+```bash
+cp .env.example .env
+```
+Set your `DATABASE_URL` (e.g., `postgresql://postgres:postgres@localhost:5432/financeops_db?schema=public`).
+*(Optional)* Add `GOOGLE_GENERATIVE_AI_API_KEY`. If left empty, the application runs 100% offline using deterministic heuristic intelligence.
+
+### 3. Initialize Database & Seed Synthetic Portfolio
+```bash
+# Push schema to PostgreSQL
+npm run db:push
+
+# Seed 10 realistic synthetic borrower accounts (ACC-8001 to ACC-8010)
+npm run seed
+```
+
+### 4. Run Development Server
+```bash
+npm run dev
+```
+Open **[http://localhost:3000](http://localhost:3000)** in your browser.
+
+### 5. Run Verification & Test Suite
+```bash
+# Run unit & integration test suite (36 tests)
+npm test
+
+# Typecheck
+npm run typecheck
+```
 
 ---
 
-## 5. Relationship to Variant 1
+## 5. Interactive Demo Scenarios
+
+The workspace includes 1-click inbound simulators to experience the core architectural loop:
+
+1. **Payment Commitment Negotiation**:
+   - Navigate to `/workspace/acc_001` (James Wilson, $320 overdue).
+   - Click preset simulator: `"I can pay $200 next Tuesday"`.
+   - Observe the Copilot detect intent `PROMISE_TO_PAY`, normalize target date, and propose `proposePromiseToPay`.
+   - Policy gate evaluates `ALLOWED`. Click **Approve Draft & Execute Tool** to record the commitment and post the compliant response.
+2. **Statutory Opt-Out Protection (TCPA / FDCPA)**:
+   - Click preset simulator: `"*STOP*"`.
+   - The policy engine triggers synchronous fast-path opt-out. Outbound channels are instantly revoked, and an opt-out confirmation message is logged.
+3. **Dispute Ingestion & Account Freeze**:
+   - Click preset simulator: `"I already paid this balance last week. Stop messaging me."`.
+   - The engine opens a formal dispute case in `/cases`, freezes active collection outreach, and transitions the account state.
+4. **Forensic Audit Verification**:
+   - Navigate to `/audit` to inspect the append-only regulatory log with JSON payload diffs for every state transition.
+
+---
+
+## 6. Documentation & Architecture Deep-Dive
+
+Comprehensive specifications, compliance matrices, and threat models are located in [docs/](docs/):
+
+- [PRODUCT_REQUIREMENTS.md](docs/PRODUCT_REQUIREMENTS.md) — Product requirements, user personas, and operational workflows.
+- [TECHNICAL_DESIGN.md](docs/TECHNICAL_DESIGN.md) — Multi-tenant architecture, database ERD, 19-rule policy engine, and tool registry.
+- [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) — Milestones, TDD contracts, and delivery roadmap.
+- [SMOKE_TEST_CHECKLIST.md](docs/SMOKE_TEST_CHECKLIST.md) — Complete 10-step interactive verification checklist.
+- [RESEARCH_AND_DECISIONS.md](docs/RESEARCH_AND_DECISIONS.md) — Industry research (C&R/Ipsos Dec 2025 survey), benchmarks, and design rationale.
+- [RISK_AND_OPEN_QUESTIONS.md](docs/RISK_AND_OPEN_QUESTIONS.md) — Failure modes, edge cases, and security controls.
+
+---
+
+## 7. Relationship to Variant 1
 
 This repository represents **Variant 2 (Collections Command Center)**. 
 

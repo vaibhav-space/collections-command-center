@@ -12,6 +12,8 @@
     "test:unit": "vitest run src/test/unit",
     "test:integration": "vitest run src/test/integration",
     "typecheck": "tsc --noEmit",
+    "db:push": "prisma db push",
+    "seed": "tsx prisma/seed.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts"
