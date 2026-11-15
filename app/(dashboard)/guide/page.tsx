@@ -33,7 +33,7 @@ const PAGES: PageItem[] = [
     isPrimary: true,
     image: '/screenshots/workspace.png',
     punchline: 'The core copilot: combines live borrower financials with Gemini intent extraction and deterministic policy enforcement.',
-    chips: ['Gemini Flash Cascade', 'Policy Gate Verdict', '1-Click Tool Execution', 'Dispute & Handoff Escalation'],
+    chips: ['Free-Text & Custom Input', 'Gemini Flash Cascade', 'Policy Gate Verdict', '1-Click Tool Execution', 'Dispute & Handoff Escalation'],
   },
   {
     id: 'queue',
@@ -442,6 +442,18 @@ export default function GuidePage() {
                       </span>
                     ))}
                   </div>
+
+                  {page.isPrimary && (
+                    <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg text-xs space-y-1 my-1">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Interactive: Free-Text Input Supported!</span>
+                      </div>
+                      <p className="text-amber-800 leading-relaxed">
+                        You are <strong className="font-semibold text-amber-950">not limited to the preset buttons</strong>. You can type <em>any</em> free-form natural language message in the simulation input box (e.g. <em>&quot;can send 150 bucks on friday if you waive fees&quot;</em>) — the real Gemini LLM extracts the intent, relative dates, and amounts dynamically.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="pt-2">
                     <Link
