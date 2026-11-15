@@ -144,6 +144,7 @@ Comprehensive specifications, compliance matrices, and threat models are located
 - [SMOKE_TEST_CHECKLIST.md](docs/SMOKE_TEST_CHECKLIST.md) — Complete 10-step interactive verification checklist.
 - [RESEARCH_AND_DECISIONS.md](docs/RESEARCH_AND_DECISIONS.md) — Industry research (C&R/Ipsos Dec 2025 survey), benchmarks, and design rationale.
 - [RISK_AND_OPEN_QUESTIONS.md](docs/RISK_AND_OPEN_QUESTIONS.md) — Failure modes, edge cases, and security controls.
+- [ai-prompts.md](docs/ai-prompts.md) — AI steering log, key prompt progression, and human verification audit.
 
 ---
 
