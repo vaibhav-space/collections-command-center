@@ -546,16 +546,50 @@ async function main() {
     },
   });
 
-  // Record initial Audit Event
-  await prisma.auditEvent.create({
-    data: {
-      tenantId: tenant.id,
-      actorType: 'SYSTEM',
-      action: 'PORTFOLIO_SEEDED',
-      entityType: 'Tenant',
-      entityId: tenant.id,
-      newState: { accountsSeeded: 10, totalDebt: '10520.00' },
-    },
+  // Record initial Audit Events
+  await prisma.auditEvent.createMany({
+    data: [
+      {
+        tenantId: tenant.id,
+        actorType: 'SYSTEM',
+        action: 'PORTFOLIO_ONBOARDED',
+        entityType: 'Portfolio',
+        entityId: tenant.id,
+        newState: { accountsManaged: 10, totalDebt: '9520.00', currency: 'USD' },
+        createdAt: new Date('2026-11-15T08:00:00Z'),
+      },
+      {
+        tenantId: tenant.id,
+        actorType: 'SYSTEM',
+        action: 'TCPA_HOURS_VERIFIED',
+        entityType: 'PolicyEngine',
+        entityId: policyVersion.id,
+        newState: { rulesChecked: ['POL-001', 'POL-002'], defaultWindow: '08:00-21:00' },
+        createdAt: new Date('2026-11-15T08:15:00Z'),
+      },
+      {
+        tenantId: tenant.id,
+        actorType: 'OPERATOR',
+        operatorId: supervisor.id,
+        action: 'DISPUTE_CASE_OPENED',
+        entityType: 'Account',
+        entityId: a5.id,
+        accountId: a5.id,
+        newState: { caseType: 'DISPUTE', outreachLock: true, reason: 'Double billing claim' },
+        createdAt: new Date('2026-11-15T09:30:00Z'),
+      },
+      {
+        tenantId: tenant.id,
+        actorType: 'OPERATOR',
+        operatorId: operator1.id,
+        action: 'PAYMENT_LINK_GENERATED',
+        entityType: 'Account',
+        entityId: a10.id,
+        accountId: a10.id,
+        newState: { amount: 200.0, channel: 'SMS', expiresAt: '2026-11-22' },
+        createdAt: new Date('2026-11-15T09:45:00Z'),
+      },
+    ],
   });
 
   console.log('Database seeding successfully completed with 10 synthetic accounts.');

@@ -74,15 +74,12 @@ export function Sidebar() {
 
       {/* Portfolio Info Footer */}
       <div className="p-4 border-t border-slate-200 bg-slate-50/50">
-        <div className="flex items-center gap-2 text-xs text-slate-600 font-medium">
+        <div className="flex items-center gap-2 text-xs text-slate-700 font-medium">
           <Building2 className="h-4 w-4 text-slate-400" />
-          <span>Demo Portfolio</span>
+          <span>Consumer Loan Portfolio</span>
         </div>
-        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-          <span>Active Accounts: 10</span>
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-800">
-            Live DB
-          </span>
+        <div className="mt-1 text-[11px] text-slate-500">
+          10 Active Accounts Assigned
         </div>
       </div>
     </aside>

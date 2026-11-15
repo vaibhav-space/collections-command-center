@@ -365,7 +365,7 @@ export function WorkspaceClient({
             {/* Quick Ledger Reconciliation Simulator */}
             <div className="pt-3 border-t border-slate-100 space-y-2">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Simulated Provider Actions
+                Payment Gateway Action
               </div>
               <button
                 disabled={isExecuting || account.currentBalance <= 0}
@@ -373,7 +373,7 @@ export function WorkspaceClient({
                 className="w-full py-1.5 px-2 rounded bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
               >
                 <CreditCard className="h-3.5 w-3.5" />
-                <span>Simulate $200 Payment Settled</span>
+                <span>Post $200 Payment Settlement</span>
               </button>
             </div>
           </div>
@@ -446,8 +446,8 @@ export function WorkspaceClient({
             {/* Interactive Inbound Simulator Composer */}
             <div className="p-3 border-t border-slate-200 bg-slate-50/50 space-y-2">
               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                <span>Simulate Inbound Borrower Message</span>
-                <span className="text-[9px] font-normal text-slate-400">Triggers live AI & policy check</span>
+                <span>Inbound Message Simulation</span>
+                <span className="text-[9px] font-normal text-slate-400">Fast Evaluation Presets</span>
               </div>
 
               {/* Fast Test Presets */}
@@ -521,8 +521,8 @@ export function WorkspaceClient({
                 <Sparkles className="h-4 w-4 text-indigo-600" />
                 <h3 className="text-xs font-bold text-slate-900">AI Copilot & Policy Gate</h3>
               </div>
-              <span className="text-[10px] font-semibold text-slate-400">
-                {copilotData?.modelUsed || 'Vercel AI SDK'}
+              <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                Active Assessment
               </span>
             </div>
 

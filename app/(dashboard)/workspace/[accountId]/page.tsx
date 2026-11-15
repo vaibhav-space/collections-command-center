@@ -87,7 +87,7 @@ export default async function WorkspacePage(props: {
             AI Conversation Workspace
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time multi-channel communication, Gemini copilot intelligence, and deterministic policy enforcement.
+            Real-time multi-channel communication, copilot operational triage, and policy enforcement.
           </p>
         </div>
       </div>

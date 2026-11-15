@@ -101,10 +101,10 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900">{accounts.length}</span>
-            <span className="text-[11px] text-emerald-600 font-medium">100% Verified DB</span>
+            <span className="text-[11px] text-slate-500 font-medium">In Active Recovery</span>
           </div>
           <div className="mt-1 text-[11px] text-slate-500">
-            Seeded synthetic portfolio
+            Assigned to collections roster
           </div>
         </div>
 
