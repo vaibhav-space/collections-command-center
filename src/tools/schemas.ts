@@ -42,17 +42,17 @@ export const ReconcilePaymentInputSchema = z.object({
 export const CreateDisputeInputSchema = z.object({
   accountId: z.string().min(1, 'accountId is required'),
   category: z.string().default('BILLING_ERROR'),
-  description: z.string().min(1, 'description is required'),
+  description: z.string().default('Dispute submitted for specialist investigation'),
 });
 
 export const CreateHardshipCaseInputSchema = z.object({
   accountId: z.string().min(1, 'accountId is required'),
-  details: z.string().min(1, 'details are required'),
+  details: z.string().default('Hardship assistance review requested'),
 });
 
 export const CreateHumanHandoffInputSchema = z.object({
   accountId: z.string().min(1, 'accountId is required'),
-  reason: z.string().min(1, 'reason is required'),
+  reason: z.string().default('Human specialist escalation requested'),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
 });
 

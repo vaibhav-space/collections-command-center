@@ -84,11 +84,19 @@ export async function POST(request: Request) {
       }
     }
 
-    // Execute Tool
+    // Execute Tool with defensive defaults for reason/description/details
+    const safeInputs = {
+      reason: inputs?.reason || body.reason || 'Human specialist escalation requested',
+      description: inputs?.description || body.description || inputs?.reason || 'Dispute escalated for investigation',
+      details: inputs?.details || body.details || inputs?.reason || 'Hardship review requested',
+      ...inputs,
+      accountId,
+    };
+
     const toolRegistry = new ToolRegistry(policyEngine);
     const toolResult = await toolRegistry.execute({
       toolName: action,
-      inputs: { ...inputs, accountId },
+      inputs: safeInputs,
       idempotencyKey,
       operatorId: 'operator_current',
     });

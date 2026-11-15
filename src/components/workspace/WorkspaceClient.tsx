@@ -149,10 +149,18 @@ export function WorkspaceClient({
     setNotification(null);
 
     try {
+      const actionInputs = {
+        ...(copilotData.recommendedAction.requiredInputs || {}),
+        reason: copilotData.recommendedAction.requiredInputs?.reason || copilotData.recommendedAction.reason || 'Escalation requested by operator',
+        description: copilotData.recommendedAction.requiredInputs?.description || copilotData.recommendedAction.reason || 'Dispute escalated for review',
+        details: copilotData.recommendedAction.requiredInputs?.details || copilotData.recommendedAction.reason || 'Hardship review requested',
+      };
+
       const payload = {
         accountId: account.id,
         action: copilotData.recommendedAction.action,
-        inputs: copilotData.recommendedAction.requiredInputs || {},
+        inputs: actionInputs,
+        reason: copilotData.recommendedAction.reason,
         editedDraftReply: editedDraft,
         idempotencyKey: `idem_act_${account.id}_${Date.now()}`,
         expectedAccountUpdatedAt: account.updatedAt,
@@ -169,7 +177,16 @@ export function WorkspaceClient({
       const data = await res.json();
 
       if (!res.ok) {
-        setNotification({ type: 'error', text: data.error || 'Execution blocked by policy engine.' });
+        let errMessage = data.error || 'Execution blocked by policy engine.';
+        if (typeof errMessage === 'string' && errMessage.trim().startsWith('[')) {
+          try {
+            const parsed = JSON.parse(errMessage);
+            if (Array.isArray(parsed) && parsed[0]?.message) {
+              errMessage = `${parsed[0].path?.join('.') || 'Validation'}: ${parsed[0].message}`;
+            }
+          } catch {}
+        }
+        setNotification({ type: 'error', text: errMessage });
         return;
       }
 
