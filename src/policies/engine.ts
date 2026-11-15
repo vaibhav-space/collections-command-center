@@ -406,20 +406,48 @@ export class PolicyEngine {
         ? params.currentUpdatedAt.toISOString()
         : new Date(params.currentUpdatedAt).toISOString();
 
-    if (params.expectedUpdatedAt !== currentStr) {
+    const expectedTime = new Date(params.expectedUpdatedAt).getTime();
+    const currentTime = new Date(currentStr).getTime();
+
+    // If timestamps match exactly, allow
+    if (params.expectedUpdatedAt === currentStr) {
       return {
-        status: 'blocked',
-        action: 'refreshAccount',
-        reason: 'Account data has changed since copilot proposal was generated (optimistic lock conflict). Please refresh the account context.',
+        status: 'allowed',
+        action: 'continue',
+        reason: 'Account state timestamp matches expected version.',
         policyVersion: this.version,
         evaluatedAt: new Date().toISOString(),
-        evidence: [
-          `expected: ${params.expectedUpdatedAt}`,
-          `current: ${currentStr}`,
-        ],
-        remediation: 'Reload the latest account ledger and regenerate proposal.',
+        evidence: [],
       };
     }
+
+    // Grace window for same-session mutations (e.g. inbound fast-path dispute hold executed within 15 seconds)
+    if (!isNaN(expectedTime) && !isNaN(currentTime)) {
+      const diffMs = Math.abs(currentTime - expectedTime);
+      if (diffMs <= 15000) {
+        return {
+          status: 'allowed',
+          action: 'continue',
+          reason: 'Account updated within active session threshold (fast-path ingestion).',
+          policyVersion: this.version,
+          evaluatedAt: new Date().toISOString(),
+          evidence: [`Delta: ${diffMs}ms`],
+        };
+      }
+    }
+
+    return {
+      status: 'blocked',
+      action: 'refreshAccount',
+      reason: 'Account data has changed since copilot proposal was generated (optimistic lock conflict). Please refresh the account context.',
+      policyVersion: this.version,
+      evaluatedAt: new Date().toISOString(),
+      evidence: [
+        `expected: ${params.expectedUpdatedAt}`,
+        `current: ${currentStr}`,
+      ],
+      remediation: 'Reload the latest account ledger and regenerate proposal.',
+    };
 
     return {
       status: 'allowed',

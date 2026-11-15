@@ -106,8 +106,15 @@ export function WorkspaceClient({
         return;
       }
 
-      // If Dispute was triggered
-      if (inboundData.detectedIntent === 'DISPUTE') {
+      // If server returned updated account state (e.g. from fast-path dispute hold or status transition)
+      if (inboundData.account) {
+        setAccount((prev: any) => ({
+          ...prev,
+          status: inboundData.account.status || prev.status,
+          hasActiveDispute: inboundData.account.hasActiveDispute ?? prev.hasActiveDispute,
+          updatedAt: inboundData.account.updatedAt || prev.updatedAt,
+        }));
+      } else if (inboundData.detectedIntent === 'DISPUTE') {
         setAccount((prev: any) => ({
           ...prev,
           status: 'IN_DISPUTE',

@@ -148,6 +148,11 @@ export async function POST(request: Request) {
       data: { lastMessageAt: messageDate },
     });
 
+    const freshAccount = await prisma.account.findUniqueOrThrow({
+      where: { id: account.id },
+      include: { borrower: true },
+    });
+
     return NextResponse.json({
       messageId: inboundMsg.id,
       conversationId: conversation.id,
@@ -155,6 +160,12 @@ export async function POST(request: Request) {
       detectedIntent,
       actionTaken,
       fastPathExecuted: disputeDecision.status === 'requires_approval',
+      account: {
+        id: freshAccount.id,
+        status: freshAccount.status,
+        hasActiveDispute: freshAccount.hasActiveDispute,
+        updatedAt: freshAccount.updatedAt.toISOString(),
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to simulate inbound message';
