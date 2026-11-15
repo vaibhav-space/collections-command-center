@@ -146,7 +146,7 @@ Expected: FAIL
 
 - [ ] **Step 3: Define complete `prisma/schema.prisma` and implement `src/lib/prisma.ts`**
 
-Define all models: `Tenant`, `Operator`, `Borrower`, `ContactMethod`, `ContactPreference`, `Account`, `AccountLedgerEntry`, `PaymentLink`, `Payment`, `PromiseToPay`, `Conversation`, `Message`, `Case`, `PolicyVersion`, `PolicyDecisionLog`, `ToolExecutionLog`, `AuditEvent`. Run migration.
+Define all models: `Tenant`, `Operator`, `Borrower`, `ContactMethod`, `ContactPreference`, `Account`, `AccountLedgerEntry`, `PaymentLink`, `Payment`, `PromiseToPay` (with `@unique idempotencyKey`), `Conversation`, `Message`, `Case`, `PolicyVersion`, `PolicyDecisionLog`, `ToolExecutionLog`, `AuditEvent`. Run migration.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -232,7 +232,7 @@ git commit -m "feat(db): create 10-account realistic synthetic seed portfolio"
 - Consumes: Account ID, amount, entry type
 - Produces: Atomic `AccountLedgerEntry` and updated `Account.currentBalance` using exact Decimal calculations.
 
-- [ ] **Step 1: Write failing test for atomic payment crediting**
+- [ ] **Step 1: Write failing test for atomic payment crediting and overdue balance waterfall**
 
 ```typescript
 // src/test/unit/ledger-service.test.ts
@@ -241,7 +241,7 @@ import { LedgerService } from '../../services/ledger.service.js';
 import { Prisma } from '@prisma/client';
 
 describe('Ledger Service', () => {
-  it('atomically credits a payment and updates account balance using exact decimal math', async () => {
+  it('atomically credits a payment, updates current balance and amount overdue using exact decimal math', async () => {
     const service = new LedgerService();
     const result = await service.recordTransaction({
       accountId: 'test_acc_001',
@@ -250,6 +250,19 @@ describe('Ledger Service', () => {
       description: 'Simulated payment credit'
     });
     expect(result.balanceAfter.toString()).toBe('800.00');
+    expect(result.amountOverdueAfter.toString()).toBe('150.00');
+  });
+
+  it('transitions account status to PAID_IN_FULL when balance reaches zero', async () => {
+    const service = new LedgerService();
+    const result = await service.recordTransaction({
+      accountId: 'test_acc_002',
+      entryType: 'PAYMENT_CREDIT',
+      amount: new Prisma.Decimal(-300.00),
+      description: 'Full payoff credit'
+    });
+    expect(result.statusAfter).toBe('PAID_IN_FULL');
+    expect(result.daysPastDueAfter).toBe(0);
   });
 });
 ```
@@ -261,7 +274,7 @@ Expected: FAIL
 
 - [ ] **Step 3: Implement `LedgerService`**
 
-Implement double-entry transaction handling with `prisma.$transaction`.
+Implement double-entry transaction handling with `prisma.$transaction`. Ensure `amountOverdue = Decimal.max(0, currentOverdue - paymentAmount)`, and transition `Account.status` to `CURRENT` (if overdue reaches 0) or `PAID_IN_FULL` (if currentBalance reaches 0).
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -324,6 +337,32 @@ describe('Deterministic Policy Engine', () => {
     });
     expect(decision.status).toBe('requires_approval');
     expect(decision.sanitizedReply).not.toContain('$1,450.00');
+  });
+
+  it('avoids false-positive privacy leaks on single words while catching full-name and phone leaks', () => {
+    const safeDecision = engine.evaluatePrivacy({
+      currentBorrowerId: 'bor_001',
+      draftReply: 'We will follow up with you in May.',
+      allBorrowers: [{ id: 'bor_002', firstName: 'May', lastName: 'Johnson', primaryPhone: '+15559876543', currentBalance: 500 }]
+    });
+    expect(safeDecision.status).toBe('allowed');
+
+    const leakDecision = engine.evaluatePrivacy({
+      currentBorrowerId: 'bor_001',
+      draftReply: 'Please contact May Johnson at 555-987-6543.',
+      allBorrowers: [{ id: 'bor_002', firstName: 'May', lastName: 'Johnson', primaryPhone: '+15559876543', currentBalance: 500 }]
+    });
+    expect(leakDecision.status).toBe('blocked');
+    expect(leakDecision.reason).toContain('privacy');
+  });
+
+  it('rejects execution when account balance was modified after copilot proposal (stale guard)', () => {
+    const decision = engine.evaluateStaleData({
+      expectedUpdatedAt: '2026-11-15T10:00:00.000Z',
+      currentUpdatedAt: '2026-11-15T10:05:00.000Z'
+    });
+    expect(decision.status).toBe('blocked');
+    expect(decision.reason).toContain('Account data has changed');
   });
 });
 ```

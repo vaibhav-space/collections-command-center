@@ -490,6 +490,7 @@ model PromiseToPay {
   approvedBy     String?         // Operator ID
   confirmedAt    DateTime?
   brokenAt       DateTime?
+  idempotencyKey String?         @unique
   notes          String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -806,7 +807,9 @@ export const CopilotAnalysisOutputSchema = z.object({
   confidenceScore: z.number().min(0).max(1).describe('Model confidence in intent classification'),
   entities: ExtractedEntitiesSchema,
   recommendedAction: ProposedActionSchema,
-  draftReply: z.string().describe('Empathetic, verified draft response for operator review')
+  draftReply: z.string().describe('Empathetic, verified draft response for operator review'),
+  isFallback: z.boolean().default(false).describe('Whether this analysis was produced by deterministic fallback'),
+  modelUsed: z.string().default('gemini-2.0-flash').describe('Model or rule engine identifier')
 });
 
 export type CopilotAnalysisOutput = z.infer<typeof CopilotAnalysisOutputSchema>;
@@ -836,6 +839,7 @@ RULES:
 4. Keep the draft reply concise and professional.`;
 
   const userPrompt = `
+Reference Date & Time (Borrower Local): ${params.currentLocalTimeFormatted} (${params.accountSnapshot.timezone})
 Account Context:
 - Account: ${params.accountSnapshot.accountNumber}
 - Verified Balance: $${params.accountSnapshot.currentBalance.toFixed(2)}
@@ -1046,10 +1050,21 @@ All API endpoints reside under `app/api/` and operate within the standard Node.j
   "action": "proposePromiseToPay",
   "inputs": { "amount": 200.00, "dueDate": "2026-11-18" },
   "editedDraftReply": "Hi Sarah, I have confirmed your promise to pay $200 by Nov 18.",
-  "idempotencyKey": "idem_ptp_acc001_20261118"
+  "idempotencyKey": "idem_ptp_acc001_20261118",
+  "expectedAccountUpdatedAt": "2026-11-15T10:30:00.000Z"
 }
 ```
 - **Response**: `{ success: true, toolResult: {...}, auditEventId: "aud_901" }`
+
+### 4. `POST /api/simulations/inbound`
+- **Body**: `{ "accountId": "acc_001", "channel": "SMS", "body": "STOP", "sentAt": "2026-11-15T14:30:00.000Z" }`
+- **Behavior**: Persists inbound message to database, executes synchronous fast-path policy check (immediate opt-out or dispute hold if triggered), and optionally invokes Copilot analysis if communication is active.
+- **Response**: `{ "messageId": "msg_009", "status": "OPTED_OUT", "actionTaken": "OUTBOUND_LOCKED" }`
+
+### 5. `POST /api/simulations/payment`
+- **Body**: `{ "accountId": "acc_001", "paymentLinkId": "plink_001", "promiseToPayId": "ptp_001", "amount": 200.00, "status": "SETTLED" }`
+- **Behavior**: Atomically updates `Payment` record, inserts credit `AccountLedgerEntry`, decrements `Account.currentBalance` and `Account.amountOverdue`, transitions `PromiseToPay` to `KEPT`, and updates `Account.status` to `CURRENT` or `PAID_IN_FULL` if overdue reaches zero.
+- **Response**: `{ "paymentId": "pay_102", "status": "SETTLED", "newBalance": 1250.00, "newAmountOverdue": 150.00, "ptpStatus": "KEPT" }`
 
 ---
 
