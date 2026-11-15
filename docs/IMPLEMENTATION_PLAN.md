@@ -401,9 +401,9 @@ git commit -m "feat(policy): implement authoritative 19-rule deterministic polic
 
 **Interfaces:**
 - Consumes: Validated tool input payloads, policy decisions, Prisma
-- Produces: Executed business mutations (`createPaymentLink`, `proposePromiseToPay`, `createDispute`, etc.) with audit events.
+- Produces: Executed business mutations (`createPaymentLink`, `proposePromiseToPay`, `createDispute`, etc.) with audit events and idempotency keys.
 
-- [ ] **Step 1: Write failing test for tool execution gate and audit logging**
+- [ ] **Step 1: Write failing test for tool execution gate, idempotency, and audit logging**
 
 ```typescript
 // src/test/unit/tool-registry.test.ts
@@ -415,11 +415,27 @@ describe('Tool Registry', () => {
     const registry = new ToolRegistry();
     const result = await registry.execute({
       toolName: 'createPaymentLink',
-      inputs: { accountId: 'acc_001', amount: 150.00 },
+      inputs: { accountId: 'acc_001', amount: 150.00, idempotencyKey: 'idem_link_001' },
       operatorId: 'op_001'
     });
     expect(result.success).toBe(true);
     expect(result.data.url).toContain('https://pay.financeops.demo');
+  });
+
+  it('rejects duplicate execution on same idempotency key and returns existing record', async () => {
+    const registry = new ToolRegistry();
+    const first = await registry.execute({
+      toolName: 'proposePromiseToPay',
+      inputs: { accountId: 'acc_001', amount: 200.00, dueDate: '2026-11-20', idempotencyKey: 'idem_ptp_duplicate_test' },
+      operatorId: 'op_001'
+    });
+    const second = await registry.execute({
+      toolName: 'proposePromiseToPay',
+      inputs: { accountId: 'acc_001', amount: 200.00, dueDate: '2026-11-20', idempotencyKey: 'idem_ptp_duplicate_test' },
+      operatorId: 'op_001'
+    });
+    expect(second.success).toBe(true);
+    expect(second.data.id).toBe(first.data.id);
   });
 });
 ```
@@ -431,7 +447,7 @@ Expected: FAIL
 
 - [ ] **Step 3: Implement 14 typed tools and simulation engine**
 
-Implement payment link generator, PTP transition engine, case creators, and payment reconciliation simulator.
+Implement payment link generator, PTP transition engine with unique `idempotencyKey`, case creators, and payment reconciliation simulator.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -442,7 +458,7 @@ Expected: PASS
 
 ```bash
 git add src/tools/ src/services/simulation.service.ts
-git commit -m "feat(tools): build typed business tool registry and simulation service"
+git commit -m "feat(tools): build typed business tool registry and simulation service with idempotency"
 ```
 
 ---
@@ -454,29 +470,45 @@ git commit -m "feat(tools): build typed business tool registry and simulation se
 - Create: `src/ai/schemas.ts`
 - Create: `src/ai/prompts.ts`
 - Create: `src/ai/service.ts`
+- Create: `src/ai/fallback.ts`
 - Test: `src/test/unit/ai-copilot.test.ts`
 
 **Interfaces:**
-- Consumes: Borrower message, account context, conversation history
-- Produces: `CopilotAnalysisOutput` (intent, entities, summary, proposed action, draft reply).
+- Consumes: Borrower message, account context, reference local date/time, conversation history
+- Produces: `CopilotAnalysisOutput` (intent, entities, summary, proposed action, draft reply, `isFallback`, `modelUsed`).
 
-- [ ] **Step 1: Write test for structured AI extraction with mock provider**
+- [ ] **Step 1: Write test for structured AI extraction and fallback with mock provider**
 
 ```typescript
 // src/test/unit/ai-copilot.test.ts
 import { describe, it, expect } from 'vitest';
-import { analyzeBorrowerMessageWithMock } from '../../ai/service.js';
+import { analyzeBorrowerMessageWithMock, generateFallbackCopilotOutput } from '../../ai/service.js';
 
 describe('AI Copilot Service', () => {
-  it('accurately parses promise-to-pay intent and extracts amount and normalized date', async () => {
+  it('accurately parses promise-to-pay intent and normalizes relative date using reference date', async () => {
     const output = await analyzeBorrowerMessageWithMock({
       inboundMessage: 'I can pay $200 next Tuesday',
       accountBalance: 1450.00,
-      timezone: 'America/New_York'
+      timezone: 'America/Chicago',
+      referenceDate: '2026-11-15T10:00:00.000Z' // Sunday
     });
     expect(output.primaryIntent).toBe('PROMISE_TO_PAY');
     expect(output.entities.amount).toBe(200.00);
+    expect(output.entities.date).toBe('2026-11-17'); // Normalized Tuesday
     expect(output.recommendedAction.action).toBe('proposePromiseToPay');
+    expect(output.isFallback).toBe(false);
+  });
+
+  it('gracefully degrades to deterministic fallback on provider error or timeout', async () => {
+    const fallback = generateFallbackCopilotOutput({
+      inboundMessage: 'I can pay $100 tomorrow',
+      accountSnapshot: { accountNumber: 'ACC-8001', currentBalance: 500, amountOverdue: 100, daysPastDue: 15, timezone: 'America/New_York' },
+      error: new Error('Gemini 429 Too Many Requests')
+    });
+    expect(fallback.isFallback).toBe(true);
+    expect(fallback.primaryIntent).toBe('PROMISE_TO_PAY');
+    expect(fallback.recommendedAction.action).toBe('proposePromiseToPay');
+    expect(fallback.modelUsed).toBe('deterministic-fallback');
   });
 });
 ```
@@ -486,9 +518,9 @@ describe('AI Copilot Service', () => {
 Run: `npx vitest run src/test/unit/ai-copilot.test.ts`
 Expected: FAIL
 
-- [ ] **Step 3: Implement Gemini provider adapter via Vercel AI SDK Core**
+- [ ] **Step 3: Implement Gemini provider adapter via Vercel AI SDK Core & Fallback Engine**
 
-Configure `@ai-sdk/google`, implement `generateObject` with `CopilotAnalysisOutputSchema`, and add graceful fallback for offline or rate-limited scenarios.
+Configure `@ai-sdk/google`, inject borrower local reference time and date into prompts, implement `generateObject` with `CopilotAnalysisOutputSchema`, and add deterministic regex-based fallback engine (`src/ai/fallback.ts`) for offline or rate-limited scenarios.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -499,7 +531,7 @@ Expected: PASS
 
 ```bash
 git add src/ai/
-git commit -m "feat(ai): integrate Vercel AI SDK Core with Google Gemini and structured Zod schemas"
+git commit -m "feat(ai): integrate Vercel AI SDK Core with Google Gemini, reference date injection, and offline fallback"
 ```
 
 ---
@@ -512,6 +544,7 @@ git commit -m "feat(ai): integrate Vercel AI SDK Core with Google Gemini and str
 - Create: `app/api/conversations/[id]/messages/route.ts`
 - Create: `app/api/ai/copilot/route.ts`
 - Create: `app/api/actions/execute/route.ts`
+- Create: `app/api/simulations/inbound/route.ts`
 - Create: `app/api/simulations/payment/route.ts`
 - Test: `src/test/integration/api-routes.test.ts`
 
@@ -519,13 +552,23 @@ git commit -m "feat(ai): integrate Vercel AI SDK Core with Google Gemini and str
 - Consumes: Next.js HTTP Request
 - Produces: Type-safe JSON API responses.
 
-- [ ] **Step 1: Write integration test for `/api/ai/copilot` and `/api/actions/execute`**
+- [ ] **Step 1: Write integration test for `/api/simulations/inbound`, `/api/ai/copilot`, and `/api/actions/execute`**
 
 ```typescript
 // src/test/integration/api-routes.test.ts
 import { describe, it, expect } from 'vitest';
 
 describe('API Route Handlers', () => {
+  it('synchronously executes opt-out on inbound STOP text without awaiting operator', async () => {
+    // POST /api/simulations/inbound with body "STOP"
+    // Expect 200, status: "OPTED_OUT", borrower.isOptedOut in DB becomes true immediately
+  });
+
+  it('rejects action execution when expectedAccountUpdatedAt does not match (optimistic concurrency guard)', async () => {
+    // POST /api/actions/execute with stale timestamp
+    // Expect 409 Conflict: "Account data was modified by another operation"
+  });
+
   it('executes an approved action through /api/actions/execute after policy clearance', async () => {
     // Verifies route returns 200 with executed tool result and audit ID
   });
@@ -539,7 +582,7 @@ Expected: FAIL
 
 - [ ] **Step 3: Implement Next.js Route Handlers**
 
-Implement Node.js runtime route handlers with input validation using Zod schemas.
+Implement Node.js runtime route handlers with input validation using Zod schemas, synchronous fast-path execution in `/api/simulations/inbound`, and optimistic concurrency check in `/api/actions/execute`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -550,7 +593,7 @@ Expected: PASS
 
 ```bash
 git add app/api/
-git commit -m "feat(api): create Next.js App Router API handlers for queue, copilot, and actions"
+git commit -m "feat(api): create Next.js App Router API handlers with synchronous fast-paths and optimistic locking"
 ```
 
 ---
@@ -675,12 +718,20 @@ git commit -m "feat(api): create Next.js App Router API handlers for queue, copi
 - Consumes: Vitest test runner, seeded database
 - Produces: Green automated test suite and repeatable manual smoke checklist.
 
-- [ ] **Step 1: Write end-to-end integration test verifying complete borrower journey**:
-  - Inbound message -> Gemini structured output -> Policy verdict -> Human approval -> Tool execution -> Ledger update -> Audit event.
+- [ ] **Step 1: Write comprehensive end-to-end integration tests covering normal and critical failure paths**:
+  - **Happy Path Walkthrough**: Inbound message -> Gemini structured output with reference date -> Policy verdict ALLOWED -> Human approval -> Tool execution -> Ledger update (reducing both balance and overdue) -> PTP marked KEPT -> Audit event recorded.
+  - **Quiet Hours Rejection**: Inbound at 11:30 PM local borrower time -> Outbound dispatch held.
+  - **Synchronous STOP Opt-Out**: Inbound "STOP" -> Immediate database opt-out, conversation paused, subsequent outbound blocked.
+  - **Dispute Auto-Hold**: Inbound dispute message -> Immediate dispute case generated, account status set to `IN_DISPUTE`, collection reminders frozen.
+  - **Privacy Leak Scanner Block**: Model draft containing foreign borrower phone/balance -> Outbound dispatch rejected with policy block.
+  - **Optimistic Concurrency Conflict**: Action approval with stale `expectedAccountUpdatedAt` -> HTTP 409 Conflict.
+  - **Idempotency Duplicate Suppression**: Repeated requests with identical `idempotencyKey` -> Returns cached execution result without duplicate database records.
+  - **Gemini Free-Tier Outage / 429 Fallback**: Simulated Gemini timeout/rate-limit -> Graceful degradation to deterministic fallback with `isFallback: true`.
+
 - [ ] **Step 2: Execute full Vitest test suite**
 
 Run: `npm run test`
-Expected: 100% passing tests with zero skipped safety checks.
+Expected: 100% passing tests across unit, integration, policy rules, and end-to-end failure paths.
 
 - [ ] **Step 3: Verify build and self-hosting readiness**
 
