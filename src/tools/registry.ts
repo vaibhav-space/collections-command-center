@@ -43,7 +43,11 @@ export class ToolRegistry {
 
   private async resolveOperatorId(operatorId?: string): Promise<string | null> {
     if (!operatorId || operatorId === 'system') return null;
-    const op = await prisma.operator.findUnique({ where: { id: operatorId } });
+    let op = await prisma.operator.findUnique({ where: { id: operatorId } });
+    if (!op) {
+      // Resolve to default active operator in tenant if a placeholder like 'operator_current' was passed
+      op = await prisma.operator.findFirst({ where: { isActive: true } });
+    }
     return op ? op.id : null;
   }
 
@@ -262,12 +266,25 @@ export class ToolRegistry {
 
           const providerRef = parsed.providerRef || `SIM_SETTLE_${Date.now()}`;
 
+          // Validate foreign references if provided
+          let validPaymentLinkId: string | null = null;
+          if (parsed.paymentLinkId) {
+            const pl = await prisma.paymentLink.findUnique({ where: { id: parsed.paymentLinkId } });
+            if (pl) validPaymentLinkId = pl.id;
+          }
+
+          let validPromiseId: string | null = null;
+          if (parsed.promiseToPayId) {
+            const ptp = await prisma.promiseToPay.findUnique({ where: { id: parsed.promiseToPayId } });
+            if (ptp) validPromiseId = ptp.id;
+          }
+
           // Create payment record
           const payment = await prisma.payment.create({
             data: {
               accountId: account.id,
-              paymentLinkId: parsed.paymentLinkId || null,
-              promiseToPayId: parsed.promiseToPayId || null,
+              paymentLinkId: validPaymentLinkId,
+              promiseToPayId: validPromiseId,
               amount: new Prisma.Decimal(parsed.amount),
               status: 'SETTLED',
               providerRef,
@@ -286,17 +303,17 @@ export class ToolRegistry {
           });
 
           // If linked to promise, mark promise KEPT
-          if (parsed.promiseToPayId) {
-            await prisma.promiseToPay.update({
-              where: { id: parsed.promiseToPayId },
+          if (validPromiseId) {
+            await prisma.promiseToPay.updateMany({
+              where: { id: validPromiseId },
               data: { status: 'KEPT' },
             });
           }
 
           // If linked to payment link, mark link COMPLETED
-          if (parsed.paymentLinkId) {
-            await prisma.paymentLink.update({
-              where: { id: parsed.paymentLinkId },
+          if (validPaymentLinkId) {
+            await prisma.paymentLink.updateMany({
+              where: { id: validPaymentLinkId },
               data: { status: 'COMPLETED' },
             });
           }

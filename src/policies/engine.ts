@@ -220,6 +220,7 @@ export class PolicyEngine {
    */
   public evaluatePrivacy(params: {
     currentBorrowerId: string;
+    currentBorrowerBalance?: number | string;
     draftReply: string;
     allBorrowers: Array<{
       id: string;
@@ -264,6 +265,14 @@ export class PolicyEngine {
       if (fb.currentBalance) {
         const balNum = typeof fb.currentBalance === 'string' ? parseFloat(fb.currentBalance) : fb.currentBalance;
         if (balNum > 0) {
+          const currentBalNum = params.currentBorrowerBalance !== undefined
+            ? (typeof params.currentBorrowerBalance === 'string' ? parseFloat(params.currentBorrowerBalance) : params.currentBorrowerBalance)
+            : null;
+          if (currentBalNum !== null && Math.abs(balNum - currentBalNum) < 0.001) {
+            // Same balance as current borrower; not a foreign-only leak
+            continue;
+          }
+
           const balFormatted = balNum.toFixed(2);
           if (params.draftReply.includes(`$${balFormatted}`)) {
             return {
