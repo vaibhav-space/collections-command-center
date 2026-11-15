@@ -1,6 +1,10 @@
 # Collections Command Center
 
-A production-grade, AI-powered Collections Command Center built with **Next.js App Router**, **TypeScript**, **PostgreSQL**, **Prisma ORM**, and the **Vercel AI SDK Core** with **Google Gemini**.
+A production-grade, AI-powered Collections Command Center built with **Next.js 15 (App Router)**, **TypeScript**, **PostgreSQL**, **Prisma ORM**, and the **Vercel AI SDK Core** with **Google Gemini**.
+
+> **Live Production Deployment**: **[https://site-finance-ops.d9196q.easypanel.host](https://site-finance-ops.d9196q.easypanel.host)**  
+> **Interactive Visual Guide & Tour**: **[https://site-finance-ops.d9196q.easypanel.host/guide](https://site-finance-ops.d9196q.easypanel.host/guide)**  
+> **Core AI Workspace Demo**: **[https://site-finance-ops.d9196q.easypanel.host/workspace/ACC-8001](https://site-finance-ops.d9196q.easypanel.host/workspace/ACC-8001)**
 
 ---
 
@@ -97,22 +101,35 @@ npm run typecheck
 
 ---
 
+### 6. Docker & VPS Deployment (1 Command)
+```bash
+# Launch PostgreSQL and Next.js standalone container
+docker compose up -d --build
+
+# The container automatically executes schema sync and seeds synthetic accounts on boot.
+# Open http://localhost:3000 (or your VPS public IP).
+```
+
+---
+
 ## 5. Interactive Demo Scenarios
 
-The workspace includes 1-click inbound simulators to experience the core architectural loop:
+The workspace includes 1-click inbound simulators as well as a **free-text input box** to experience the core architectural loop:
 
-1. **Payment Commitment Negotiation**:
-   - Navigate to `/workspace/acc_001` (James Wilson, $320 overdue).
-   - Click preset simulator: `"I can pay $200 next Tuesday"`.
+1. **Payment Commitment Negotiation (Real LLM Extraction)**:
+   - Navigate to `/workspace/ACC-8001` (Sarah Jenkins, $1,100 balance, $350 overdue).
+   - Click preset simulator `"I can pay $200 next Tuesday"` **or type any free-form natural language text** (e.g. `"can send 150 bucks on friday if you waive fees"`).
    - Observe the Copilot detect intent `PROMISE_TO_PAY`, normalize target date, and propose `proposePromiseToPay`.
    - Policy gate evaluates `ALLOWED`. Click **Approve Draft & Execute Tool** to record the commitment and post the compliant response.
 2. **Statutory Opt-Out Protection (TCPA / FDCPA)**:
-   - Click preset simulator: `"*STOP*"`.
+   - Click preset simulator: `"STOP"`.
    - The policy engine triggers synchronous fast-path opt-out. Outbound channels are instantly revoked, and an opt-out confirmation message is logged.
 3. **Dispute Ingestion & Account Freeze**:
-   - Click preset simulator: `"I already paid this balance last week. Stop messaging me."`.
-   - The engine opens a formal dispute case in `/cases`, freezes active collection outreach, and transitions the account state.
-4. **Forensic Audit Verification**:
+   - Click preset simulator: `"I dispute this bill, I already paid it last week"`.
+   - The engine opens a formal dispute case in `/cases`, freezes active collection outreach, and transitions the account state to `IN_DISPUTE`.
+4. **Supervisor Escalation**:
+   - Click **Escalate to Lead** on any contentious message to create an actionable review ticket in the `/cases` queue.
+5. **Forensic Audit Verification**:
    - Navigate to `/audit` to inspect the append-only regulatory log with JSON payload diffs for every state transition.
 
 ---
