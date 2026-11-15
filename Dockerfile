@@ -28,6 +28,7 @@ ENV NODE_ENV=production
 ENV DATABASE_URL="postgresql://postgres:postgres@localhost:5432/financeops_db"
 
 RUN npx prisma generate
+RUN npx esbuild prisma/seed.ts --bundle --platform=node --target=node20 --outfile=prisma/seed.cjs --packages=external
 RUN npm run build
 
 # -----------------------------------------------------------------------------
@@ -40,6 +41,9 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# Install Prisma CLI globally in runner so 'prisma db push' runs reliably without node_modules cherry-picking
+RUN npm install -g prisma@6.4.1
+
 # Non-root system user for security
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
@@ -50,14 +54,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
-
-# Copy CLI tooling for migrations and seeds
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/tsx ./node_modules/tsx
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/esbuild ./node_modules/esbuild
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/get-tsconfig ./node_modules/get-tsconfig
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
 
 # Copy entrypoint script
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
