@@ -33,3 +33,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# untracked local guides & screenshots
+app/(dashboard)/guide
+public/screenshots
