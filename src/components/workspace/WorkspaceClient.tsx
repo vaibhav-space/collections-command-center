@@ -231,7 +231,52 @@ export function WorkspaceClient({
     }
   };
 
-  // 3. Simulate Payment Settlement Shortcut
+  // 3. Escalate to Team Lead (Creates Case in Cases & Review Queue)
+  const handleEscalateToLead = async () => {
+    setIsExecuting(true);
+    setNotification(null);
+    try {
+      const res = await fetch('/api/actions/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: account.id,
+          action: 'createHumanHandoff',
+          inputs: {
+            reason:
+              copilotData?.summary ||
+              copilotData?.recommendedAction?.reason ||
+              'Operator escalated account to Team Lead for senior review',
+            priority: 'HIGH',
+          },
+          idempotencyKey: `idem_esc_${account.id}_${Date.now()}`,
+          expectedAccountUpdatedAt: account.updatedAt,
+          conversationId: initialConversation?.id,
+          channel: selectedChannel,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setNotification({ type: 'error', text: data.error || 'Failed to escalate case.' });
+        return;
+      }
+
+      setNotification({
+        type: 'success',
+        text: 'Account successfully escalated to Team Lead. Case logged in Cases & Review queue.',
+      });
+      setCopilotData(null);
+      setEditedDraft('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Escalation failed';
+      setNotification({ type: 'error', text: msg });
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
+  // 4. Simulate Payment Settlement Shortcut
   const handleSimulatePaymentSettlement = async (amount: number) => {
     setIsExecuting(true);
     try {
@@ -660,13 +705,12 @@ export function WorkspaceClient({
                       Reject Suggestion
                     </button>
                     <button
-                      onClick={() => {
-                        setNotification({ type: 'info', text: 'Case escalated to supervisor queue.' });
-                        setCopilotData(null);
-                      }}
-                      className="py-1.5 px-2 rounded bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-medium text-xs transition-colors"
+                      disabled={isExecuting}
+                      onClick={handleEscalateToLead}
+                      className="py-1.5 px-2 rounded bg-amber-50 hover:bg-amber-100 disabled:opacity-50 border border-amber-200 text-amber-800 font-medium text-xs transition-colors flex items-center justify-center gap-1"
                     >
-                      Escalate to Lead
+                      {isExecuting ? <Clock className="h-3 w-3 animate-spin" /> : null}
+                      <span>Escalate to Lead</span>
                     </button>
                   </div>
                 </div>
