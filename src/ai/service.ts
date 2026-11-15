@@ -1,5 +1,5 @@
 import { generateObject } from 'ai';
-import { getLanguageModel } from './client';
+import { getLanguageModel, getModelSequence } from './client';
 import { CopilotAnalysisOutputSchema, CopilotAnalysisOutput } from './schemas';
 import { generateDeterministicFallback } from './fallback';
 import { PolicyEngine } from '@/policies/engine';
@@ -24,7 +24,6 @@ export interface AnalyzeBorrowerMessageParams {
 export async function analyzeBorrowerMessage(
   params: AnalyzeBorrowerMessageParams
 ): Promise<CopilotAnalysisOutput> {
-  const model = getLanguageModel();
   const policy = params.policyEngine ?? new PolicyEngine();
   const refDate = params.referenceTime ?? new Date();
 
@@ -41,15 +40,22 @@ export async function analyzeBorrowerMessage(
     // fallback to ISO string
   }
 
+  const modelCandidates = getModelSequence();
+  const isKeyConfigured = Boolean(
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY &&
+    !process.env.GOOGLE_GENERATIVE_AI_API_KEY.startsWith('your_') &&
+    process.env.NODE_ENV !== 'test' &&
+    !process.env.VITEST
+  );
+
   // If no live model configured, execute deterministic fallback immediately
-  if (!model) {
+  if (!isKeyConfigured) {
     const fallbackOutput = generateDeterministicFallback({
       inboundMessage: params.inboundMessage,
       accountSnapshot: params.accountSnapshot,
       errorReason: 'No Google Gemini API key configured',
     });
 
-    // Run first-reply disclosure check
     const isFirst = (!params.recentMessages || params.recentMessages.length <= 1);
     const sanitizedCheck = policy.evaluateFirstReplyDisclosure({
       isFirstMessage: isFirst,
@@ -97,38 +103,49 @@ New Inbound Borrower Message:
 "${params.inboundMessage}"
 `;
 
-  try {
-    const result = await generateObject({
-      model,
-      schema: CopilotAnalysisOutputSchema,
-      system: systemPrompt,
-      prompt: userPrompt,
-      temperature: 0.1,
-    });
+  let lastErrorMsg = 'Unknown AI error';
 
-    const output = result.object;
-    output.isFallback = false;
-    output.modelUsed = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  // Cascade across verified working free-tier models
+  for (const modelName of modelCandidates) {
+    const liveModel = getLanguageModel(modelName);
+    if (!liveModel) continue;
 
-    // In-code policy guardrail: first-reply debt disclosure
-    const isFirst = (!params.recentMessages || params.recentMessages.length <= 1);
-    const sanitizedCheck = policy.evaluateFirstReplyDisclosure({
-      isFirstMessage: isFirst,
-      inboundMessage: params.inboundMessage,
-      draftReply: output.draftReply,
-    });
+    try {
+      const result = await generateObject({
+        model: liveModel,
+        schema: CopilotAnalysisOutputSchema,
+        system: systemPrompt,
+        prompt: userPrompt,
+        temperature: 0.1,
+      });
 
-    if (sanitizedCheck.sanitizedReply) {
-      output.draftReply = sanitizedCheck.sanitizedReply;
+      const output = result.object;
+      output.isFallback = false;
+      output.modelUsed = modelName;
+
+      // In-code policy guardrail: first-reply debt disclosure
+      const isFirst = (!params.recentMessages || params.recentMessages.length <= 1);
+      const sanitizedCheck = policy.evaluateFirstReplyDisclosure({
+        isFirstMessage: isFirst,
+        inboundMessage: params.inboundMessage,
+        draftReply: output.draftReply,
+      });
+
+      if (sanitizedCheck.sanitizedReply) {
+        output.draftReply = sanitizedCheck.sanitizedReply;
+      }
+
+      return output;
+    } catch (error: unknown) {
+      lastErrorMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`[AI Copilot] Model ${modelName} failed or rate-limited: ${lastErrorMsg}. Trying fallback model...`);
     }
-
-    return output;
-  } catch (error: unknown) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown AI error';
-    return generateDeterministicFallback({
-      inboundMessage: params.inboundMessage,
-      accountSnapshot: params.accountSnapshot,
-      errorReason: errorMsg,
-    });
   }
+
+  // If all live models failed, engage deterministic heuristic fallback
+  return generateDeterministicFallback({
+    inboundMessage: params.inboundMessage,
+    accountSnapshot: params.accountSnapshot,
+    errorReason: `All candidate models exhausted. Last error: ${lastErrorMsg}`,
+  });
 }
